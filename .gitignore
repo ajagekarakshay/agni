@@ -1,59 +1,60 @@
-# zig files
-.zig-cache/
-zig-out/
+# Zig build state and output
+/.zig-cache/
+/zig-cache/
+/zig-out/
+/zig-pkg/
 
-# clangd files
-compile_commands.json
+# Generated compilation databases and language-server caches
+/compile_commands.json
+/.cache/
+/.clangd-index/
 
-# Jetbrains IDE
-.idea/
-.cache/
+# IDE user state (shared run configurations live in /.run/)
+/.idea/
+/.vscode/
+*.iml
 
-# Prerequisites
+# Local copy of the upstream project template
+/cpp-project-zig-template/
+
+# C and C++ compiler output
 *.d
-
-# Compiled Object files
-*.slo
-*.lo
 *.o
 *.obj
-
-# Precompiled Headers
+*.lo
+*.slo
 *.gch
 *.pch
-
-# Linker files
 *.ilk
-
-# Debugger Files
 *.pdb
-
-# Compiled Dynamic libraries
+*.dwo
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
 *.a
 *.lib
-
-# Executables
 *.exe
 *.out
 *.app
 
-# debug information files
-*.dwo
+# Test, profiling, and coverage output
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+coverage/
 
-# nix flake files
-flake.lock
+# Nix build result symlinks
+/result
+/result-*
 
-# nix build files
-result
-zig-pkg/
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor backup and temporary files
+*~
+*.swp
+*.swo
+*.tmp
