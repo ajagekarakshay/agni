@@ -53,6 +53,7 @@ pub fn build(b: *std.Build) void {
     // Zig only needs to expose their include directories to this C++ target.
     const glaze = b.dependency("glaze", .{});
     const asio = b.dependency("asio", .{});
+    const eigen = b.dependency("eigen", .{});
 
     const windows_openssl_root = if (enable_https and target.result.os.tag == .windows)
         resolveWindowsOpenSslRoot(b, openssl_root)
@@ -67,7 +68,7 @@ pub fn build(b: *std.Build) void {
             .link_libcpp = true,
         }),
     });
-    configureApp(b, app, target, optimize, glaze, asio, enable_https, windows_openssl_root);
+    configureApp(b, app, target, optimize, glaze, asio, eigen, enable_https, windows_openssl_root);
 
     const debug_app = b.addExecutable(.{
         .name = "debug",
@@ -77,7 +78,7 @@ pub fn build(b: *std.Build) void {
             .link_libcpp = true,
         }),
     });
-    configureApp(b, debug_app, target, .Debug, glaze, asio, enable_https, windows_openssl_root);
+    configureApp(b, debug_app, target, .Debug, glaze, asio, eigen, enable_https, windows_openssl_root);
 
     b.installArtifact(app);
     if (windows_openssl_root) |root| {
@@ -123,6 +124,7 @@ fn configureApp(
     optimize: std.builtin.OptimizeMode,
     glaze: *std.Build.Dependency,
     asio: *std.Build.Dependency,
+    eigen: *std.Build.Dependency,
     enable_https: bool,
     windows_openssl_root: ?[]const u8,
 ) void {
@@ -134,6 +136,7 @@ fn configureApp(
     });
     app.root_module.addIncludePath(glaze.path("include"));
     app.root_module.addIncludePath(asio.path("asio/include"));
+    app.root_module.addSystemIncludePath(eigen.path("."));
     app.root_module.addCMacro("ASIO_STANDALONE", "1");
     addWindowsIdeStdlibConfig(app, target);
     linkDebugSanitizerRuntime(b, app, target, optimize);

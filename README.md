@@ -1,8 +1,9 @@
 # C++ HTTP + JSON with Glaze, built by Zig
 
 This example uses Zig 0.16.0 as both the build system and C++ compiler. It uses
-Glaze 8.0.0 for HTTP and JSON, standalone Asio 1.36.0 for networking, and
-OpenSSL for HTTPS. No CMake, Make, Ninja, CPR, or libcurl is involved.
+Glaze 8.0.0 for HTTP and JSON, standalone Asio 1.36.0 for networking, Eigen
+5.0.1 for linear algebra, and OpenSSL for HTTPS. No CMake, Make, Ninja, CPR,
+or libcurl is involved.
 
 The demo performs an HTTP GET, parses the JSON body directly into a C++ struct,
 prints its fields, and serializes the struct back to JSON.
@@ -12,7 +13,7 @@ prints its fields, and serializes the struct back to JSON.
 - Zig 0.16.0
 - A C++23-capable clangd for IDE support
 
-Glaze and standalone Asio are downloaded and content-hash-verified by Zig.
+Glaze, standalone Asio, and Eigen are downloaded and content-hash-verified by Zig.
 HTTPS builds use the packaged OpenSSL dependency on Unix-like targets. On
 Windows, the build links against an installed OpenSSL because the packaged
 OpenSSL build script does not yet support Windows.
@@ -94,15 +95,17 @@ database after regenerating `compile_commands.json`.
 
 ## How build.zig replaces CMake
 
-Glaze and Asio are header-only, so there are no external source libraries to
+Glaze, Asio, and Eigen are header-only, so there are no external source libraries to
 compile. Zig exposes their headers to the application target:
 
 ```zig
 const glaze = b.dependency("glaze", .{});
 const asio = b.dependency("asio", .{});
+const eigen = b.dependency("eigen", .{});
 
 app.root_module.addIncludePath(glaze.path("include"));
 app.root_module.addIncludePath(asio.path("asio/include"));
+app.root_module.addSystemIncludePath(eigen.path("."));
 app.root_module.addCMacro("ASIO_STANDALONE", "1");
 ```
 

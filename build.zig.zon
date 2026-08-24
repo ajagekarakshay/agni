@@ -12,6 +12,10 @@
             .url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-36-0.tar.gz",
             .hash = "N-V-__8AAMFI8gBDMmF4QKoXCYKsqu0nB64ohZ7ISmPz2Mx5",
         },
+        .eigen = .{
+            .url = "https://gitlab.com/libeigen/eigen/-/archive/5.0.1/eigen-5.0.1.tar.gz",
+            .hash = "N-V-__8AAAw1BwGhdvWradc9fSFxv7VAlHDTAhEJyx1MJXn4",
+        },
         .compile_commands = .{
             .url = "https://github.com/the-argus/zig-compile-commands/archive/9400cd1963ea6bb58fe47ba7d9700075b808cdd2.tar.gz",
             .hash = "zig_compile_commands-0.0.1-OZg5-e_JAAAGg1WHAePtq4l4Uvjs34BexnFFCZk63EaG",
