@@ -1,30 +1,15 @@
 const std = @import("std");
-const build_helpers = @import("build/build_helpers.zig");
-
-const builtin = std.builtin;
-const ArrayList = std.ArrayList;
-const mem = std.mem;
-const Allocator = mem.Allocator;
-const FixedBufferAllocator = std.heap.FixedBufferAllocator;
-const fs = std.fs;
-const Build = std.Build;
-const Module = Build.Module;
-const CSourceLanguage = Module.CSourceLanguage;
-
+const builtin = @import("builtin");
 const zcc = @import("compile_commands");
 
-const additional_flags: []const []const u8 = &.{"-std=c++20"};
-const debug_flags = runtime_check_flags ++ warning_flags;
-
-const runtime_check_flags: []const []const u8 = &.{
-    "-fsanitize=array-bounds,null,alignment,unreachable,address,leak", // asan and leak are linux/macos only in 0.14.1
-    "-fstack-protector-strong",
-    "-fno-omit-frame-pointer",
+const base_cxx_flags: []const []const u8 = &.{
+    "-std=c++23",
 };
 
 const warning_flags: []const []const u8 = &.{
     "-Wall",
     "-Wextra",
+    "-Wpedantic",
     "-Wnull-dereference",
     "-Wuninitialized",
     "-Wshadow",
@@ -40,187 +25,289 @@ const warning_flags: []const []const u8 = &.{
     "-Wmissing-declarations",
     "-Wunused",
     "-Wundef",
-    "-Werror",
+};
+
+const runtime_check_flags: []const []const u8 = &.{
+    "-fsanitize=array-bounds,null,alignment,unreachable,address",
+    "-fstack-protector-strong",
+    "-fno-omit-frame-pointer",
 };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe_mod = b.addModule("exe", .{
-        .target = target,
-        .optimize = optimize,
-        .link_libcpp = true, // May need to change this to linkLibC() for your project
-    });
-
-    const exe = b.addExecutable(.{
-        .name = "zig-compiled",
-        .root_module = exe_mod,
-    });
-
-    const debug_mod = b.addModule("debug", .{
-        .target = target,
-        .optimize = optimize,
-        .link_libcpp = true, // May need to change this to linkLibC() for your project
-    });
-    // Does not link asan or use build flags other than "std="
-    const debug = b.addExecutable(.{
-        .name = "debug",
-        .root_module = debug_mod,
-        .use_llvm = true,
-    });
-
-    const exe_flags = getBuildFlags(
-        b.allocator,
-        exe,
-        optimize,
-    ) catch |err|
-        @panic(@errorName(err));
-
-    const exe_files = build_helpers.getCSrcFiles(
-        b.allocator,
-        .{
-            .dir_path = "src/cpp",
-            .flags = exe_flags,
-            .language = .cpp,
-        },
-    ) catch |err|
-        @panic(@errorName(err));
-
-    // Setup exe executable
-    {
-        exe.root_module.addCSourceFiles(exe_files);
-        exe.root_module.addIncludePath(b.path("include"));
-    }
-
-    // Setup debug executable
-    {
-        var debug_files = exe_files;
-        debug_files.flags = additional_flags;
-        debug.root_module.addCSourceFiles(debug_files);
-        debug.root_module.addIncludePath(b.path("include"));
-    }
-
-    // Build and Link zig -> c code -------------------------------------------
-
-    // This is not included in the install step
-    const zig_lib = b.addLibrary(.{
-        .name = "mathtest",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/zig/mathtest.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-        }),
-        .linkage = .static,
-    });
-    zig_lib.root_module.addIncludePath(b.path("include/"));
-    exe.root_module.linkLibrary(zig_lib);
-    debug.root_module.linkLibrary(zig_lib);
-    //-------------------------------------------------------------------------
-
-    // Build and/or Link Dynamic library --------------------------------------
-    const dynamic_option = b.option(bool, "build-dynamic", "builds the static.a file") orelse false;
-    if (dynamic_option) {
-        const dynamic_lib = build_helpers.addCLib(b, .{
-            .name = "example_dynamic",
-            .dir_path = "lib/example-dynamic-lib/",
-            .optimize = optimize,
-            .target = target,
-            .flags = additional_flags ++ debug_flags ++ warning_flags,
-            .language = .cpp,
-            .linkage = .dynamic,
-        });
-        exe.root_module.linkLibrary(dynamic_lib);
-        debug.root_module.linkLibrary(dynamic_lib);
-        b.installArtifact(dynamic_lib);
-    } else {
-        exe.root_module.addLibraryPath(b.path("lib/"));
-        exe.root_module.linkSystemLibrary("example_dynamic", .{});
-        debug.root_module.addLibraryPath(b.path("lib/"));
-        debug.root_module.linkSystemLibrary("example_dynamic", .{});
-    }
-    //-------------------------------------------------------------------------
-
-    // Build and/or Link Static library --------------------------------------
-    const static_option = b.option(bool, "build-static", "builds the static.a file") orelse false;
-    if (static_option) {
-        const static_lib = build_helpers.addCLib(b, .{
-            .name = "example_static",
-            .dir_path = "lib/example-static-lib/",
-            .optimize = optimize,
-            .target = target,
-            .language = .c,
-            .linkage = .static,
-        });
-        exe.root_module.linkLibrary(static_lib);
-        debug.root_module.linkLibrary(static_lib);
-        zig_lib.root_module.linkLibrary(static_lib);
-        b.installArtifact(static_lib);
-    } else {
-        exe.root_module.addLibraryPath(b.path("lib/"));
-        exe.root_module.linkSystemLibrary("example_static", .{});
-        debug.root_module.addLibraryPath(b.path("lib/"));
-        debug.root_module.linkSystemLibrary("example_static", .{});
-    }
-    //-------------------------------------------------------------------------
-
-    b.installArtifact(exe);
-    const exe_run = b.addRunArtifact(exe);
-    const debug_run = b.addRunArtifact(debug);
-
-    exe_run.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| {
-        exe_run.addArgs(args);
-        debug_run.addArgs(args);
-    }
-
-    const run_step = b.step("run", "runs the application");
-    run_step.dependOn(&exe_run.step);
-
-    const debug_step = b.step("debug", "runs the applicaiton without any warning or san flags");
-
-    // Causes debug to only be compiled when using debug step.
-    debug_step.dependOn(&b.addInstallArtifact(debug, .{}).step);
-
-    var targets = ArrayList(*std.Build.Step.Compile).empty;
-    defer targets.deinit(b.allocator);
-
-    targets.append(b.allocator, exe) catch |err| @panic(@errorName(err));
-    targets.append(b.allocator, debug) catch |err| @panic(@errorName(err));
-
-    // Used to generate compile_commands.json
-    _ = zcc.createStep(
-        b,
-        "cmds",
-        targets.toOwnedSlice(b.allocator) catch |err|
-            @panic(@errorName(err)),
+    const https_option = b.option(
+        bool,
+        "https",
+        "Enable HTTPS support with OpenSSL (default: true)",
     );
+    const enable_https = https_option orelse true;
+    const openssl_root = b.option(
+        []const u8,
+        "openssl-root",
+        "OpenSSL installation root to use for Windows HTTPS builds",
+    );
+
+    // These libraries are header-only. build.zig.zon pins their source archives;
+    // Zig only needs to expose their include directories to this C++ target.
+    const glaze = b.dependency("glaze", .{});
+    const asio = b.dependency("asio", .{});
+
+    const windows_openssl_root = if (enable_https and target.result.os.tag == .windows)
+        resolveWindowsOpenSslRoot(b, openssl_root)
+    else
+        null;
+
+    const app = b.addExecutable(.{
+        .name = "glaze-http-demo",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        }),
+    });
+    configureApp(b, app, target, optimize, glaze, asio, enable_https, windows_openssl_root);
+
+    const debug_app = b.addExecutable(.{
+        .name = "debug",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .Debug,
+            .link_libcpp = true,
+        }),
+    });
+    configureApp(b, debug_app, target, .Debug, glaze, asio, enable_https, windows_openssl_root);
+
+    b.installArtifact(app);
+    if (windows_openssl_root) |root| {
+        installWindowsOpenSslRuntime(b, b.getInstallStep(), root);
+    }
+
+    const build_step = b.step("build", "Alias for install: build and install artifacts");
+    build_step.dependOn(b.getInstallStep());
+
+    const run_cmd = b.addRunArtifact(app);
+    run_cmd.step.dependOn(b.getInstallStep());
+    if (windows_openssl_root) |root| {
+        configureWindowsOpenSslRunStep(b, run_cmd, root);
+    }
+    if (b.args) |args| run_cmd.addArgs(args);
+    const run_step = b.step("run", "Build and run the Glaze HTTP + JSON example");
+    run_step.dependOn(&run_cmd.step);
+
+    const debug_install = b.addInstallArtifact(debug_app, .{});
+    if (windows_openssl_root) |root| {
+        installWindowsOpenSslRuntime(b, &debug_install.step, root);
+    }
+    const debug_step = b.step("debug", "Build the Debug executable for IDE debugging");
+    debug_step.dependOn(&debug_install.step);
+
+    zcc.options().driver = "clang++";
+    var cdb_targets: std.ArrayList(*std.Build.Step.Compile) = .empty;
+    cdb_targets.append(b.allocator, app) catch @panic("out of memory");
+    cdb_targets.append(b.allocator, debug_app) catch @panic("out of memory");
+    const cdb_step = zcc.createStep(
+        b,
+        "cdb",
+        cdb_targets.toOwnedSlice(b.allocator) catch @panic("out of memory"),
+    );
+    const cmds_step = b.step("cmds", "Alias for cdb: generate compile_commands.json");
+    cmds_step.dependOn(cdb_step);
 }
 
-/// Returns the build flags used depending on optimization level.
-/// Will automatically link asan to exe if debug mode is used.
-fn getBuildFlags(
-    alloc: Allocator,
-    exe: *std.Build.Step.Compile,
+fn configureApp(
+    b: *std.Build,
+    app: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) ![]const []const u8 {
-    var flags: []const []const u8 = undefined;
+    glaze: *std.Build.Dependency,
+    asio: *std.Build.Dependency,
+    enable_https: bool,
+    windows_openssl_root: ?[]const u8,
+) void {
+    const cxx_flags = getBuildFlags(target, optimize);
 
-    if (optimize == .Debug) {
-        flags = additional_flags ++ debug_flags;
-        if (exe.rootModuleTarget().os.tag == .windows)
-            return flags;
+    app.root_module.addCSourceFile(.{
+        .file = b.path("src/main.cpp"),
+        .flags = cxx_flags,
+    });
+    app.root_module.addIncludePath(glaze.path("include"));
+    app.root_module.addIncludePath(asio.path("asio/include"));
+    app.root_module.addCMacro("ASIO_STANDALONE", "1");
+    addWindowsIdeStdlibConfig(app, target);
+    linkDebugSanitizerRuntime(b, app, target, optimize);
 
-        exe.root_module.addLibraryPath(.{ .cwd_relative = try build_helpers.getClangPath(alloc, exe.rootModuleTarget()) });
-        const asan_lib = if (exe.rootModuleTarget().os.tag == .windows) "clang_rt.asan_dynamic-x86_64" // Won't be triggered in current version
-            else "clang_rt.asan-x86_64";
+    if (enable_https) {
+        if (target.result.os.tag == .windows) {
+            linkWindowsOpenSsl(b, app, windows_openssl_root.?);
+        } else {
+            const openssl = b.dependency("openssl", .{
+                .target = target,
+                .optimize = optimize,
+            });
 
-        exe.root_module.linkSystemLibrary(asan_lib, .{.needed = true});
-    } else {
-        flags = additional_flags;
+            app.root_module.addCMacro("GLZ_ENABLE_SSL", "1");
+            app.root_module.linkLibrary(openssl.artifact("openssl"));
+        }
     }
-    return flags;
+
+    if (target.result.os.tag == .windows) {
+        app.root_module.linkSystemLibrary("ws2_32", .{});
+        app.root_module.linkSystemLibrary("mswsock", .{});
+    }
+}
+
+fn addWindowsIdeStdlibConfig(
+    app: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+) void {
+    if (target.result.os.tag != .windows) return;
+
+    const b = app.step.owner;
+    const zig_lib = b.graph.zig_lib_directory;
+
+    app.root_module.addSystemIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ zig_lib.path orelse ".", "libcxx", "include" }),
+    });
+    app.root_module.addSystemIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ zig_lib.path orelse ".", "libcxxabi", "include" }),
+    });
+    app.root_module.addSystemIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ zig_lib.path orelse ".", "include" }),
+    });
+    app.root_module.addSystemIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ zig_lib.path orelse ".", "libc", "include", "any-windows-any" }),
+    });
+    app.root_module.addSystemIncludePath(.{
+        .cwd_relative = b.pathJoin(&.{ zig_lib.path orelse ".", "libunwind", "include" }),
+    });
+
+    app.root_module.addCMacro("__MSVCRT_VERSION__", "0xE00");
+    app.root_module.addCMacro("_WIN32_WINNT", "0x0a00");
+    app.root_module.addCMacro("_LIBCPP_ABI_VERSION", "1");
+    app.root_module.addCMacro("_LIBCPP_ABI_NAMESPACE", "__1");
+    app.root_module.addCMacro("_LIBCPP_HAS_THREADS", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_MONOTONIC_CLOCK", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_TERMINAL", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_MUSL_LIBC", "0");
+    app.root_module.addCMacro("_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS", "1");
+    app.root_module.addCMacro("_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_VENDOR_AVAILABILITY_ANNOTATIONS", "0");
+    app.root_module.addCMacro("_LIBCPP_HAS_FILESYSTEM", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_RANDOM_DEVICE", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_LOCALIZATION", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_UNICODE", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_WIDE_CHARACTERS", "1");
+    app.root_module.addCMacro("_LIBCPP_HAS_NO_STD_MODULES", "1");
+    app.root_module.addCMacro("_LIBCPP_PSTL_BACKEND_SERIAL", "1");
+    app.root_module.addCMacro("_LIBCPP_HARDENING_MODE", "_LIBCPP_HARDENING_MODE_NONE");
+}
+
+fn getBuildFlags(
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) []const []const u8 {
+    if (optimize != .Debug) {
+        return base_cxx_flags;
+    }
+
+    return if (canUseDebugSanitizers(target.result, optimize))
+        base_cxx_flags ++ warning_flags ++ runtime_check_flags
+    else
+        base_cxx_flags ++ warning_flags;
+}
+
+fn canUseDebugSanitizers(target: std.Target, optimize: std.builtin.OptimizeMode) bool {
+    return optimize == .Debug and
+        builtin.os.tag == .linux and
+        target.os.tag == .linux and
+        target.cpu.arch == builtin.cpu.arch;
+}
+
+fn linkDebugSanitizerRuntime(
+    b: *std.Build,
+    app: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) void {
+    if (!canUseDebugSanitizers(target.result, optimize)) return;
+
+    const asan_file = switch (target.result.cpu.arch) {
+        .x86_64 => "libclang_rt.asan-x86_64.so",
+        else => return,
+    };
+    const asan_name = switch (target.result.cpu.arch) {
+        .x86_64 => "clang_rt.asan-x86_64",
+        else => return,
+    };
+    const asan_path = std.mem.trimEnd(
+        u8,
+        b.run(&.{ "clang", b.fmt("-print-file-name={s}", .{asan_file}) }),
+        "\r\n",
+    );
+    if (std.mem.eql(u8, asan_path, asan_file)) return;
+
+    app.root_module.addLibraryPath(.{ .cwd_relative = std.fs.path.dirname(asan_path) orelse return });
+    app.root_module.linkSystemLibrary(asan_name, .{ .needed = true });
+}
+
+fn linkWindowsOpenSsl(
+    b: *std.Build,
+    app: *std.Build.Step.Compile,
+    root: []const u8,
+) void {
+    const include_dir = b.pathJoin(&.{ root, "include" });
+    const lib_dir = b.pathJoin(&.{ root, "lib" });
+
+    app.root_module.addCMacro("GLZ_ENABLE_SSL", "1");
+    app.root_module.addSystemIncludePath(.{ .cwd_relative = include_dir });
+    app.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
+    app.root_module.linkSystemLibrary("libssl", .{});
+    app.root_module.linkSystemLibrary("libcrypto", .{});
+}
+
+fn installWindowsOpenSslRuntime(
+    b: *std.Build,
+    step: *std.Build.Step,
+    root: []const u8,
+) void {
+    const bin_dir = b.pathJoin(&.{ root, "bin" });
+
+    step.dependOn(&b.addInstallFileWithDir(
+        .{ .cwd_relative = b.pathJoin(&.{ bin_dir, "libssl-4-x64.dll" }) },
+        .bin,
+        "libssl-4-x64.dll",
+    ).step);
+    step.dependOn(&b.addInstallFileWithDir(
+        .{ .cwd_relative = b.pathJoin(&.{ bin_dir, "libcrypto-4-x64.dll" }) },
+        .bin,
+        "libcrypto-4-x64.dll",
+    ).step);
+}
+
+fn configureWindowsOpenSslRunStep(
+    b: *std.Build,
+    run_cmd: *std.Build.Step.Run,
+    root: []const u8,
+) void {
+    const bin_dir = b.pathJoin(&.{ root, "bin" });
+
+    run_cmd.addPathDir(bin_dir);
+    run_cmd.setEnvironmentVariable("OPENSSL_CONF", b.pathJoin(&.{ bin_dir, "cnf", "openssl.cnf" }));
+    run_cmd.setEnvironmentVariable("OPENSSL_MODULES", bin_dir);
+}
+
+fn resolveWindowsOpenSslRoot(b: *std.Build, configured_root: ?[]const u8) []const u8 {
+    return configured_root orelse getEnvVar(b, "OPENSSL_ROOT_DIR") orelse defaultWindowsOpenSslRoot(b);
+}
+
+fn getEnvVar(b: *std.Build, name: []const u8) ?[]const u8 {
+    return b.graph.environ_map.get(name);
+}
+
+fn defaultWindowsOpenSslRoot(b: *std.Build) []const u8 {
+    const user_profile = getEnvVar(b, "USERPROFILE") orelse
+        @panic("OPENSSL_ROOT_DIR is not set and USERPROFILE is unavailable; pass -Dopenssl-root=<path>");
+    return b.pathJoin(&.{ user_profile, "scoop", "apps", "openssl", "current" });
 }

@@ -1,0 +1,13 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Zig Build" type="ZIGBRAINS_BUILD" factoryName="Zig build">
+    <option name="buildSteps" value="build" />
+    <option name="compilerArgs" value="" />
+    <option name="extraArgs" value="" />
+    <option name="debugBuildSteps" value="debug" />
+    <option name="debugCompilerArgs" value="" />
+    <option name="debugExtraArgs" value="" />
+    <option name="exePath" value="$PROJECT_DIR$/zig-out/bin/debug.exe" />
+    <option name="exeArgs" value="" />
+    <method v="2" />
+  </configuration>
+</component>

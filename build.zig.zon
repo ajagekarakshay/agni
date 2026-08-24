@@ -1,22 +1,32 @@
 .{
-    .name = .zig_compiled,
-
-    .version = "0.0.0",
-
-    .fingerprint = 0x3b754198ed83c33d, // Changing this has security and trust implications.
-
-    .minimum_zig_version = "0.15.1",
-
+    .name = .zig_cpp_glaze_example,
+    .version = "0.2.0",
+    .fingerprint = 0xf3e5e9d98776be7f,
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
+        .glaze = .{
+            .url = "https://github.com/stephenberry/glaze/archive/refs/tags/v8.0.0.tar.gz",
+            .hash = "N-V-__8AALKPpwAgZ4JbjRNgIuus1SQpVmIHZkXh4c1XAfUm",
+        },
+        .asio = .{
+            .url = "https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-36-0.tar.gz",
+            .hash = "N-V-__8AAMFI8gBDMmF4QKoXCYKsqu0nB64ohZ7ISmPz2Mx5",
+        },
         .compile_commands = .{
-            .url = "https://github.com/the-argus/zig-compile-commands/archive/70fb439897e12cae896c071717d7c9c382918689.tar.gz",
-            .hash = "zig_compile_commands-0.0.1-OZg5-ULBAABTh3NXO3WXoSUX1474ez0EouuoT2yDANhz",
+            .url = "https://github.com/the-argus/zig-compile-commands/archive/9400cd1963ea6bb58fe47ba7d9700075b808cdd2.tar.gz",
+            .hash = "zig_compile_commands-0.0.1-OZg5-e_JAAAGg1WHAePtq4l4Uvjs34BexnFFCZk63EaG",
+        },
+        .openssl = .{
+            .url = "git+https://github.com/allyourcodebase/openssl?ref=3.3.2#6b318b447c8ff7529e3a2337a1df2a9b4816fee2",
+            .hash = "openssl-3.3.2-TC9C3Ze3ZABaKR5hc8KRnRPhTClKrKQKqTnXTUYkvmSR",
         },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
-        "include",
+        "README.md",
+        ".clangd",
+        ".gitignore",
     },
 }

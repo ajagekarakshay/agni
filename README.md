@@ -1,172 +1,171 @@
-# Zig Build System Template For C/C++
-## Description
-This is a [zig build system](https://ziglang.org/) template for c/cpp. It includes some easily toggleable strict default flags
-for your c/cpp project intended to encourage safer code.
+# C++ HTTP + JSON with Glaze, built by Zig
 
-### features
-By default, the build.Zig is configured to recursively search the src/cpp directory for .cpp files and compiles them using the following warnings and sanitizers.  
-**See windows section for notes on windows support.**
+This example uses Zig 0.16.0 as both the build system and C++ compiler. It uses
+Glaze 8.0.0 for HTTP and JSON, standalone Asio 1.36.0 for networking, and
+OpenSSL for HTTPS. No CMake, Make, Ninja, CPR, or libcurl is involved.
 
-<details>
-<summary>⚠️ <strong>Warnings</strong></summary>
-<br>
+The demo performs an HTTP GET, parses the JSON body directly into a C++ struct,
+prints its fields, and serializes the struct back to JSON.
 
-- Wall
-- Wextra
-- Wnull-dereference
-- Wuninitialized
-- Wshadow
-- Wpointer-arith              # warns on potentially unsafe pointer arithmetic
-- Wstrict-aliasing            # warns on violations of strict aliasing rules
-- Wstrict-overflow=5          # warns on compiler assumptions about overflow (level 5 = most strict)
-- Wcast-align                 # warns on casts that may result in misaligned memory access
-- Wconversion                 # warns on implicit type conversions that may change values
-- Wsign-conversion            # warns on implicit signed/unsigned conversions
-- Wfloat-equal                # warns on comparisons between floating-point values
-- Wformat=2                   # enables full format string checks
-- Wswitch-enum                # warns when not all enum values are handled in a switch
-- Wmissing-declarations       # warns if functions are defined without prior declarations
-- Wunused
-- Wundef                      # warns when undefined macros are used in `#if`
-- Werror                      # treats all warnings as errors
-</details>
+## Requirements
 
-<details>
-<summary>⚠️ <strong>Sanitizers</strong></summary>
-<br>
+- Zig 0.16.0
+- A C++23-capable clangd for IDE support
 
-- fsanitize=address
-- fsanitize=array-bounds      # detects out-of-bounds array accesses
-- fsanitize=null              # detects null pointer dereferencing
-- fsanitize=alignment         # detects misaligned memory access
-- fsanitize=leak              # detects memory leaks
-- fsanitize=unreachable       # detects execution of code marked as unreachable
-- fstack-protector-strong     # adds stack canaries to detect buffer overflows
-- fno-omit-frame-pointer      # keeps frame pointers for better stack traces
+Glaze and standalone Asio are downloaded and content-hash-verified by Zig.
+HTTPS builds use the packaged OpenSSL dependency on Unix-like targets. On
+Windows, the build links against an installed OpenSSL because the packaged
+OpenSSL build script does not yet support Windows.
 
-</details>
+## Build and run
 
-Because Zig does not natively package certain sanitizers such ASan, **Clang is required in addition to Zig to build this project**.  
-
-The template's `build.zig` uses a Clang command to locate ASan libraries for linking in `Debug` mode.
-
-### Setup
-To use compile this template after cloning it, you must first build the dynamic and static libraries it relies on. This is simple as all you need to do is run the following command.  
-
-```
-zig build -Dbuild-static -Dbuild-dynamic
-```
-**Note:** you can use any regular build steps with these flags (eg: zig build run)
-
-After they are built you can avoid having to rebuild them by moving them to the ./lib/ directory. You can do this with the following.
-```
-mv ./zig-out/lib/libexample_* ./lib/
+```sh
+zig build --fetch
+zig build
+zig build run
+zig build run -- https://jsonplaceholder.typicode.com/todos/2
 ```
 
----
-## Project structure
-```
-./
-  ./lib/ # Includes source code for dynamic and static library examples and
-         # is the location you can store the built library files in for automatic linking
+For an HTTP-only build that does not require OpenSSL:
 
-  ./include/ # Place header files here
-
-  ./src/
-    ./c # Unused in this template, but here to demonstrate a reccomended structure
-    ./cpp # All files here will be compiled and linked automatically
-    ./zig # Files here are compiled and linked as a library
-
-  build.zig
-  build.zig.zon
+```sh
+zig build -Dhttps=false
+zig build run -Dhttps=false -- http://127.0.0.1:8080/todo
 ```
 
----
-## For use with language servers
-The template has a dependency on [the-argus/zig-compile-commands](https://github.com/the-argus/zig-compile-commands) for automating the creation of a **compile_commands.json** because the zig build system has no native way to do this. This file hints to language servers and IDEs how to analyze your project.
+On Windows, the build uses `-Dopenssl-root`, then `OPENSSL_ROOT_DIR`, then the
+Scoop default at `%USERPROFILE%\scoop\apps\openssl\current`:
 
-In order to use it, run the following build step after configuring the project to your preference.
-
+```sh
+zig build -Dhttps=true -Dopenssl-root="C:\Users\you\scoop\apps\openssl\current"
 ```
+
+To build with packaged OpenSSL from Windows, target Linux explicitly:
+
+```sh
+zig build -Dhttps=true -Dtarget=x86_64-linux-gnu
+```
+
+## Generate compile_commands.json
+
+```sh
+zig build cdb
+```
+
+The template-compatible alias is also available:
+
+```sh
 zig build cmds
 ```
 
----
-## For use with Jetbrains IDEs (eg: Clion)
-### Prerequisites
-In the IDE, install the [zigbrains](https://plugins.jetbrains.com/plugin/22456-zigbrains) extension. Then add your build toolchain in the extensions settings. Once done, open the template in the ide, and **select compilation database project** in the popup.  
-**Note:** the IDE **will not** see your compile_commands.json if you do not select this option properly. This will result in issues. The IDE will also not give warnings based off compile_commands.json 
+If you use non-default build options, pass the same options to this command:
 
-### Setting up the project
-Once open, no build configuration will be provided by default. This  means in order to run your project, either regularly or with the debugger, you must first add a run configuration. Luckily this is fairly simple.
-
-First click the **Add Configuration** Button in the IDE top bar, then select the **edit configurations** drop down. Click the **plus button** on the sub window and scroll down until you see the **Zig buiild** option.
-
-In the newly created Unnamed Configuration Menu, set the following:
-- Build steps &rarr; run
-- Debug Build steps &rarr; debug
-- Debug output executable created by build  &rarr; **/path/to/project**/zig-out/bin/debug
-  **Note:** if you change the name property of the debug executable in the build.zig you will need to change the name in the debug output path
-
-If, when you run the project, you get an error stating the following:
-
-```
-Zig project toolchain not set, cannot execute program!
-Please configure it in [Settings | Languages & Frameworks | Zig]
+```sh
+zig build cmds -Dhttps=false
 ```
 
-You can fix it by going to settings -> Languages & Frameworks -> Zig then selecting the toolchain installed on your system.
+This writes `compile_commands.json` in the project root. Open this directory in
+VS Code with the clangd extension, Neovim, CLion compilation-database mode, or
+another clangd-based editor.
 
----
-## Windows
-For windows, both setup and use are complicated because of inconsistant support of various sanitizers and bugs within the current version of zig. 
+The database uses `clang++` as its IDE-facing driver. The real build continues
+to use Zig's Clang-based C++ frontend and linker.
 
-### Setup
----
-#### Installing Clang
-Just like on Linux and Mac, you must install clang in order to use supported sanitizers. This is because **the MSVC sanitizers are not compatible with zig**.
+On Windows, the generated database includes Zig's bundled libc++ headers and
+configuration defines so clangd/CLion can resolve `std::` symbols.
 
-This can be done with the following command in powershell
-```ps1
-winget install LLVM.LLVM
-```
+## JetBrains CLion setup
 
-Once LLVM is installed you can use clang by adding the following to the *Path* environment variable.
-- C:\Program Files\LLVM\bin
-- C:\Program Files\LLVM\lib\clang\20\ #or whatever version you have installed
----
-#### Configuring build.zig
-On Windows, the leak sanitizer is currently unsupported. So in order for Zig to build properly, **you must remove the leak tag from the *runtime_check_flags* constant in build.zig
+1. Install the ZigBrains plugin.
+2. Configure the Zig toolchain in ZigBrains settings.
+3. Open this directory as a compilation database project.
+4. Generate the database with `zig build cmds`.
+5. Use the shared `.run` configurations, or create a Zig build run
+   configuration manually:
+   - Build steps: `build` for compile/install only, or `run` to execute the app
+   - Program arguments: optional URL after `--`, for example
+     `-- https://jsonplaceholder.typicode.com/todos/2`
+   - Debug build steps: `debug`
+   - Debug output executable: `<project>/zig-out/bin/debug.exe` on Windows, or
+     `<project>/zig-out/bin/debug` on Unix-like systems
 
-Before
+If CLion still does not show `std::` IntelliSense, reload the compilation
+database after regenerating `compile_commands.json`.
+
+## How build.zig replaces CMake
+
+Glaze and Asio are header-only, so there are no external source libraries to
+compile. Zig exposes their headers to the application target:
+
 ```zig
-#168
-const runtime_check_flags: []const []const u8 = &.{
-    "-fsanitize=array-bounds,null,alignment,unreachable,address,leak", // asan and leak are linux/macos only in 0.14.1
-    "-fstack-protector-strong",
-    "-fno-omit-frame-pointer",
-};
-#174
+const glaze = b.dependency("glaze", .{});
+const asio = b.dependency("asio", .{});
+
+app.root_module.addIncludePath(glaze.path("include"));
+app.root_module.addIncludePath(asio.path("asio/include"));
+app.root_module.addCMacro("ASIO_STANDALONE", "1");
 ```
 
-After
+HTTPS additionally enables Glaze's SSL code and links OpenSSL. Windows uses the
+installed OpenSSL import libraries:
+
 ```zig
-#168
-const runtime_check_flags: []const []const u8 = &.{
-    "-fsanitize=array-bounds,null,alignment,unreachable,address", //leak", // asan and leak are linux/macos only in 0.14.1
-    "-fstack-protector-strong",
-    "-fno-omit-frame-pointer",
-};
-#174
+app.root_module.addSystemIncludePath(.{ .cwd_relative = openssl_include_dir });
+app.root_module.addLibraryPath(.{ .cwd_relative = openssl_lib_dir });
+app.root_module.linkSystemLibrary("libssl", .{});
+app.root_module.linkSystemLibrary("libcrypto", .{});
 ```
 
-After making this change building the project should result in success, but you will lose leak-detection.
+Unix-like targets use the Zig package:
 
-**Special Note for Zig 0.14**
-In the 0.14 zig release for windows, there is ~~a bug for which a [fix has been merged](https://github.com/ziglang/zig/pull/23140)~~ a bug with [asan](https://github.com/ziglang/zig/issues/24643).  
+```zig
+const openssl = b.dependency("openssl", .{
+    .target = target,
+    .optimize = optimize,
+});
 
-In order to avoid running into this bug, disable either the *-Werror* in *warning_flags* or the *address* flag in *runtime_check_flags* (reccomended for general use).
+app.root_module.addCMacro("GLZ_ENABLE_SSL", "1");
+app.root_module.linkLibrary(openssl.artifact("openssl"));
+```
 
----
-## AI Disclosure
-AI tools were used to assist the creation of this template and README.md. This was created when I had a more rudementary understanding of the zig build system which has rapidly changed since this projects initial commit. Agentic/Fully vibe coded workflows were not used.
+The application itself is compiled as C++23 because Glaze's current networking
+API uses features such as `std::expected`:
+
+```zig
+app.root_module.addCSourceFile(.{
+    .file = b.path("src/main.cpp"),
+    .flags = &.{"-std=c++23"},
+});
+app.root_module.linkSystemLibrary("c++", .{});
+```
+
+## JSON flow
+
+Glaze reflects aggregate structs automatically; no schema macros are needed:
+
+```cpp
+struct Todo {
+    int userId{};
+    int id{};
+    std::string title{};
+    bool completed{};
+};
+
+Todo todo{};
+auto error = glz::read_json(todo, response->response_body);
+auto json = glz::write_json(todo);
+```
+
+For field renaming, private data, enums-as-strings, validation, or custom
+serialization, add `glz::meta<T>` metadata.
+
+## Important caveats
+
+- Glaze's networking API is usable but explicitly described upstream as under
+  active development. Pin a version and review release notes before upgrading.
+- Glaze core JSON has no external runtime dependency, but networking requires
+  Asio, and HTTPS requires OpenSSL.
+- Windows HTTPS links against an installed OpenSSL. Unix-like HTTPS builds use
+  the pinned OpenSSL Zig package.
+- Regenerate `compile_commands.json` whenever flags, dependencies, defines, or
+  source files change.
